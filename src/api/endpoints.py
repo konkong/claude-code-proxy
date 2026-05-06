@@ -28,34 +28,37 @@ openai_client = OpenAIClient(
     custom_headers=custom_headers,
 )
 
-async def validate_api_key(x_api_key: Optional[str] = Header(None), authorization: Optional[str] = Header(None)):
+
+async def validate_api_key(
+    x_api_key: Optional[str] = Header(None), authorization: Optional[str] = Header(None)
+):
     """Validate the client's API key from either x-api-key header or Authorization header."""
     client_api_key = None
-    
+
     # Extract API key from headers
     if x_api_key:
         client_api_key = x_api_key
     elif authorization and authorization.startswith("Bearer "):
         client_api_key = authorization.replace("Bearer ", "")
-    
+
     # Skip validation if ANTHROPIC_API_KEY is not set in the environment
     if not config.anthropic_api_key:
         return
-        
+
     # Validate the client API key
     if not client_api_key or not config.validate_client_api_key(client_api_key):
         logger.warning(f"Invalid API key provided by client")
         raise HTTPException(
-            status_code=401,
-            detail="Invalid API key. Please provide a valid Anthropic API key."
+            status_code=401, detail="Invalid API key. Please provide a valid Anthropic API key."
         )
 
+
 @router.post("/v1/messages")
-async def create_message(request: ClaudeMessagesRequest, http_request: Request, _: None = Depends(validate_api_key)):
+async def create_message(
+    request: ClaudeMessagesRequest, http_request: Request, _: None = Depends(validate_api_key)
+):
     try:
-        logger.debug(
-            f"Processing Claude request: model={request.model}, stream={request.stream}"
-        )
+        logger.debug(f"Processing Claude request: model={request.model}, stream={request.stream}")
 
         # Generate unique request ID for cancellation tracking
         request_id = str(uuid.uuid4())
@@ -104,12 +107,8 @@ async def create_message(request: ClaudeMessagesRequest, http_request: Request, 
                 return JSONResponse(status_code=e.status_code, content=error_response)
         else:
             # Non-streaming response
-            openai_response = await openai_client.create_chat_completion(
-                openai_request, request_id
-            )
-            claude_response = convert_openai_to_claude_response(
-                openai_response, request
-            )
+            openai_response = await openai_client.create_chat_completion(openai_request, request_id)
+            claude_response = convert_openai_to_claude_response(openai_response, request)
             return claude_response
     except HTTPException:
         raise
