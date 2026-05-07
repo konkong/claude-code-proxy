@@ -4,9 +4,68 @@ import asyncio
 import json
 
 import httpx
+import pytest
 from dotenv import load_dotenv
 
 load_dotenv()
+
+pytestmark = pytest.mark.asyncio
+
+
+async def test_event_batch_list():
+    """Test batch logging of event list."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "http://localhost:8082/api/event_logging/batch",
+            json={
+                "batch_id": "batch_test_123",
+                "events": [
+                    {"event_type": "message_start"},
+                    {"event_type": "message_stop"},
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "batch_id": "batch_test_123",
+        "processed_count": 2,
+        "message": "Events logged successfully",
+    }
+
+
+async def test_event_batch_single():
+    """Test batch wrapping of single event."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "http://localhost:8082/api/event_logging/batch",
+            json={"events": {"event_type": "message_delta"}},
+        )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["success"] is True
+    assert body["batch_id"].startswith("batch_")
+    assert body["processed_count"] == 1
+    assert body["message"] == "Events logged successfully"
+
+
+async def test_event_batch_invalid_json():
+    """Test batch handling of invalid JSON."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "http://localhost:8082/api/event_logging/batch",
+            content="not-json",
+            headers={"content-type": "application/json"},
+        )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["success"] is True
+    assert body["batch_id"].startswith("batch_")
+    assert body["processed_count"] == 0
+    assert body["message"] == "Events logged successfully"
 
 
 async def test_basic_chat():
@@ -248,6 +307,9 @@ async def main():
     print("=" * 50)
 
     try:
+        await test_event_batch_list()
+        await test_event_batch_single()
+        await test_event_batch_invalid_json()
         await test_health_and_connection()
         await test_token_counting()
         await test_basic_chat()

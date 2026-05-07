@@ -7,7 +7,11 @@ from typing import Optional
 from src.core.config import config
 from src.core.logging import logger
 from src.core.client import OpenAIClient
-from src.models.claude import ClaudeMessagesRequest, ClaudeTokenCountRequest
+from src.models.claude import (
+    ClaudeMessagesRequest,
+    ClaudeTokenCountRequest,
+    EventLoggingBatchResponse,
+)
 from src.conversion.request_converter import convert_claude_to_openai
 from src.conversion.response_converter import (
     convert_openai_to_claude_response,
@@ -159,6 +163,51 @@ async def count_tokens(request: ClaudeTokenCountRequest, _: None = Depends(valid
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/api/event_logging/batch")
+async def event_logging_batch(request: Request) -> EventLoggingBatchResponse:
+    try:
+        try:
+            body = await request.json()
+        except ValueError:
+            body = {}
+
+        batch_id = body.get("batch_id") or f"batch_{uuid.uuid4().hex[:16]}"
+        events = body.get("events", [])
+        event_items = events if isinstance(events, list) else [events] if events else []
+        processed_count = len(event_items)
+
+        if event_items:
+            logger.debug(
+                f"Event logging batch received: batch_id={batch_id}, "
+                f"events_count={processed_count}"
+            )
+            for index, event in enumerate(event_items[:5], start=1):
+                event_type = (
+                    event.get("event_type", "unknown") if isinstance(event, dict) else "unknown"
+                )
+                logger.debug(f"Event {index}: type={event_type}")
+
+            remaining_count = processed_count - 5
+            if remaining_count > 0:
+                logger.debug(f"Event logging batch has {remaining_count} additional events")
+
+        return EventLoggingBatchResponse(
+            success=True,
+            batch_id=batch_id,
+            processed_count=processed_count,
+            message="Events logged successfully",
+        )
+
+    except Exception as e:
+        logger.warning(f"Event logging batch error: {e}")
+        return EventLoggingBatchResponse(
+            success=True,
+            batch_id=f"batch_{uuid.uuid4().hex[:16]}",
+            processed_count=0,
+            message="Events received",
+        )
+
+
 @router.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -227,6 +276,7 @@ async def root():
         "endpoints": {
             "messages": "/v1/messages",
             "count_tokens": "/v1/messages/count_tokens",
+            "event_logging_batch": "/api/event_logging/batch",
             "health": "/health",
             "test_connection": "/test-connection",
         },
